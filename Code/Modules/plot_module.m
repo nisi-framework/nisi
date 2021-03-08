@@ -1,0 +1,620 @@
+function [] = plot_module(Frequency_Analysis,Plot_Configuration,nameDataset,nameCalFolder,...
+                          nameMeasFolder,CorM,Time, ...
+                          Calibration_Temperature,Simulated_Temperature_Vector,Calibration_Heat_Flux, ...
+                          Msrmnt_Temperature, Msrmnt_Heat_Flux,Impulse_Response, ...
+                          FFT_1_M,FFT_1_A,FFT_2_M,FFT_2_A,FFT_3_M,FFT_3_A,...
+                          FFT_4_M,FFT_4_A,FFT_5_M,FFT_5_A,analyzeIR)
+% This module contains the plotting routines.
+% It is controlled via the Plot_Configuration, which is an output variable 
+% of the config file.
+%
+% Configuration of plots
+% 0 - deactivated
+% 1 - activated
+%
+% Default Plot_Configuration:
+%                                C M
+%       Plot_Configuration   = [ 1 0    | Calibration/Simulation Temperature   
+%                                1 0    | Calibration/Inversion Heat Flux      
+%                                0 1    | Measurement Heat Flux      
+%                                1 1    | Impulse Response                      
+%                                0 0    | FFT - Calibration Temperature
+%                                0 0    | FFT - Calibration Heat Flux
+%                                0 0    | FFT - Measurement Temperature
+%                                0 0    | FFT - Inverse     Heat Flux
+%                                0 0 ]; | FFT - Impulse Response
+%
+%
+% Note: If analyzeIR = 1 (true) && CorM == 'C', then the values for
+% Calibration/Inversion Heat Flux and Measurement Heat Flux become
+% overwritten to false and the relative and absolute error of the 
+% Simulation vs. the Calibration Temperatur is plotted instead
+
+% "load" global vairables
+global TorP
+
+
+if sum(Plot_Configuration) > 0      % One can disable the plot_module by defining all plot configureations as 0 as 
+fprintf('Plotting data... \n')
+
+%% ------------------------------------------------------------------------
+% Switch parameters calibration/measurement case
+%--------------------------------------------------------------------------
+if CorM == 'C'
+    plotConfigColumn = 1;               
+    namePlotWindow = (['Calibration Data - ' nameDataset '_' nameCalFolder]);
+else %if CorM == 'M'
+    plotConfigColumn = 2;               
+    namePlotWindow = (['Measurement Data - ' nameDataset '_' nameMeasFolder]);
+end
+
+%% ------------------------------------------------------------------------
+% Switch labeling Temperature/Pressure
+%--------------------------------------------------------------------------
+switch TorP
+    case 'T'
+        physicalQuantity = 'Temperature';
+        yLabelTorP = 'Temperature difference / K';
+    case 'p'
+        physicalQuantity = 'Pressure';
+        yLabelTorP = 'Pressure difference / bar';
+end
+
+%% ------------------------------------------------------------------------
+% Color Definitions 
+%--------------------------------------------------------------------------
+ii           = length(Impulse_Response(:,1,1));         
+jj           = length(Impulse_Response(1,:,1));        
+cMapIR      = spring(ii*jj);           % spring is colormap: magenta to yellow
+cMapDeltaT  = autumn((ii*jj)+1);
+cMap3D      = hot(ii+4); 
+
+%% ------------------------------------------------------------------------
+% Size estimation of the main visualisation figures
+%--------------------------------------------------------------------------
+positioning = 0;
+for i = 1:4
+   if Plot_Configuration(i,plotConfigColumn) == 1
+       positioning = positioning + 1; 
+   end
+end
+if positioning > 2 
+    x_Size = 2;
+    y_Size = 2;
+else
+    x_Size = positioning;
+    y_Size = 1;
+end
+%% ------------------------------------------------------------------------
+% Actual Plotting
+%--------------------------------------------------------------------------
+if sum(Plot_Configuration(1:4,plotConfigColumn)) ~= 0 
+try
+    close(namePlotWindow);
+end
+    fig(1)=figure('Name',namePlotWindow,'NumberTitle','off','units','normalized','outerposition',[0 0 1 1]);
+    
+    if length(Calibration_Temperature(:,1,1))>1 %NISI 3D figure for calibration
+    fig(2)=figure('Name','Calibration/Simulation Data','NumberTitle','off','units','normalized','outerposition',[0 0 1 1]); 
+    set(0,'currentfigure',fig(2))
+    end
+    
+locator = 0;
+locator3D = 0;
+if Plot_Configuration(1,plotConfigColumn) == 1  % <-> Calibration/Simulation Temp/Pressure
+    locator = locator + 1;
+    subplot(y_Size,x_Size,locator)
+    for i = 1:length(Calibration_Temperature(:,1,1))
+                   locator3D=locator3D+1;
+        for j = 1:length(Calibration_Temperature(:,1,1))
+
+            if length(Calibration_Heat_Flux(:,1,1))==1
+                hold;
+            else
+                hold on;
+            end
+            clear buffer_a buffer_b buffer_c y1Max y1Min
+            buffer_a(1,:) = Calibration_Temperature(i,j,:);
+            buffer_b(1,:) = Simulated_Temperature_Vector(i,j,:);
+            buffer_c(1,:) = Calibration_Heat_Flux(i,j,:);
+            if length(Calibration_Heat_Flux(:,1,1))==1 %1D
+                [ax,~,~] = plotyy(Time(1:length(buffer_a)),buffer_a,Time(1:length(buffer_c)),buffer_c);
+                hold(ax(1), 'on');
+                plot(Time(1:length(buffer_b)),buffer_b, '-g', 'Parent', ax(1))
+                hold(ax(1),'off');
+            else %3D
+
+                subplot(2,4,locator3D)
+                if i==j
+                  yyaxis left
+                  p(1)=plot(Time(1:length(buffer_c)),buffer_c,'-k','Marker','o','MarkerIndices',1:int32(length(Calibration_Heat_Flux)/8):length(Calibration_Heat_Flux),...
+                      'DisplayName','Heat Flux');
+                    title(sprintf('Area %d',i))
+                    xlabel('Time,s')
+                    ylabel('Heat Flux, kW/m^2')
+                    ylim=[0,1.2*max(max(max(Calibration_Temperature(i,:,:))))];
+                end
+                yyaxis right
+                hold on
+                h{i}=plot(Time(1:length(buffer_b)),buffer_b,'--','Marker','+','DisplayName',sprintf('T_{Sim, Sensor%d}',j),'MarkerIndices',1:int32(length(Calibration_Heat_Flux)/10):length(Calibration_Heat_Flux),'Color',cMap3D(j,:));
+                k{i}=plot(Time(1:length(buffer_a)),buffer_a,'-','DisplayName',sprintf('T_{Cal,Sensor%d}',j),'Color',cMap3D(j,:));
+                ax(i)=gca;
+                ylabel('Tempearture, K')
+                lgd=legend('show');
+                lgd.NumColumns=2;
+            end
+        end
+    end   
+
+        if length(Calibration_Heat_Flux(:,1,1))==1
+            title(['Calibration/Simulation ' physicalQuantity]);
+            legend(['Calibration ' physicalQuantity],['Simulated ' physicalQuantity],'Calibration Heat Flux');
+        end
+        
+        xlabel('Time / s');
+        if length(Calibration_Heat_Flux(:,1,1))==1 %1D
+            set(get(ax(1),'Ylabel'),'String',yLabelTorP);
+            set(get(ax(2),'Ylabel'),'String','Heat flux / W/m^2');
+            
+            % Configure left Y-Axis
+            y1Min = min(min(Calibration_Temperature(:), min(Simulated_Temperature_Vector(:))));
+            y1Max = max(max(Calibration_Temperature(:), max(Simulated_Temperature_Vector(:))));
+            if y1Max > 50
+                y1Max = ceil(y1Max/100)*100;
+                set(ax(1),'Ytick', 0:y1Max/10:y1Max)
+            elseif y1Max > 10
+                y1Max = ceil(y1Max/10)*10;
+                set(ax(1),'Ytick', 0:5:y1Max)
+            elseif y1Max < 1
+                y1Max = (ceil(y1Max*10)+1)/10;
+                set(ax(1),'Ytick', 0:y1Max/10:y1Max)
+                ytickformat('%,.1f')
+            else
+                y1Max = ceil(y1Max);
+                set(ax(1),'Ytick', 0:y1Max/10:y1Max)
+                ytickformat('%,.1f')
+            end
+            set(ax(1),'YLim',[y1Min,y1Max])
+            
+            % Configure right Y-Axis
+            y2Max = max(max(Calibration_Heat_Flux(:)));
+            OoMHF = ceil(log10(y2Max));             % order of magnitude of heat flux
+            y2Max = ceil(y2Max/10^OoMHF)*10^OoMHF;  % round up to next order of magnitude
+            y2Min = min(min(Calibration_Heat_Flux(:)));
+            if y2Min < 0 && y2Min > -y2Max/10
+                y2Min = -y2Max/10;
+            else
+                y2Min = 0;
+            end
+            set(ax(2),'YLim',[y2Min,y2Max],'Ytick', 0:0.5*10^OoMHF:y2Max)
+        else % 3D
+            for i=1:length(Calibration_Heat_Flux(:,1,1))
+              yyaxis right
+            ylabel('Temperature,K')
+            ax(i).YLim=[0,1.2*max(max(max(Calibration_Temperature(i,:,:))))];
+            yyaxis left
+            ylabel('Heat Flux, W/m^2')
+            axHF(i).YLim=[0,1.2*max(max(max(Calibration_Heat_Flux(i,:,:))))];
+            end
+        end
+end
+
+   if length(Calibration_Temperature(:,1,1))>1
+    set(0,'currentfigure',fig(1))
+   end
+   
+if analyzeIR && CorM == 'C'  
+    % plot absolute Delta T of Simulated Temperature Vector to Calibration Temperature in seperate plot window
+    locator = locator + 1;
+    subplot(y_Size,x_Size,locator)
+    hold;
+    plot([0 Time(end)],[0 0],'k--')
+    for i = 1:length(Calibration_Temperature(:,1,1))
+        for j = 1:length(Calibration_Temperature(:,1,1))
+%           set(gca, 'ColorOrder', colormap(cMapDeltaT), 'NextPlot', 'replacechildren');
+          DeltaTabs(1,:) = Simulated_Temperature_Vector(1,1,:) - Calibration_Temperature(1,1,:);
+          DeltaTabs=7*DeltaTabs;
+          DeltaTrel(1,1:length(Calibration_Temperature(1,1,:))) = 0;
+          for k = 1:length(Calibration_Temperature(1,1,:))
+            DeltaTrel(1,k) = ...
+                100*(Simulated_Temperature_Vector(1,1,k) - Calibration_Temperature(1,1,k))/ ...
+                Calibration_Temperature(1,1,k);
+          end
+          [axerr,~,~] = plotyy(Time(1:length(DeltaTrel)),DeltaTabs,Time(1:length(DeltaTrel)),DeltaTrel);
+        end
+    end
+    title(['Error Simulation vs. Calibration ' physicalQuantity]);
+    xlabel('Time / s');
+    if TorP == 'T'
+        set(get(axerr(1),'Ylabel'),'String','Absolute error / K');
+    elseif TorP == 'p'
+        set(get(axerr(1),'Ylabel'),'String','Absolute error / bar');
+    end
+    set(get(axerr(2),'Ylabel'),'String','Relative error');
+    set(axerr(2),'YLim',[-30,30],'Ytick', -30:10:30)
+    
+else % -> d.h. analyzeIR = 0 oder CorM == 'M'  
+    
+    if Plot_Configuration(2,plotConfigColumn) == 1 % <-> Calibration/Inversion HF
+        locator = locator + 1;
+        subplot(y_Size,x_Size,locator)
+
+        for i = 1:length(Msrmnt_Heat_Flux(:,1))
+            for j = 1:length(Calibration_Heat_Flux(:,1,1))
+            clear buffer_b buffer_a   
+            hold;
+
+            buffer_a(1,:) = Calibration_Heat_Flux(i,j,:);%Calibration
+            h1 = plot(0,0);
+            plot(Time(1:length(buffer_a)),buffer_a,'DisplayName','Calibration')
+            delete(h1);
+            buffer_b(1,:) = Msrmnt_Heat_Flux(i,:); 
+            plot(Time(1:length(buffer_b)),buffer_b,'DisplayName','Inversion') 
+
+            end
+            hold;
+        end
+        title('Calibration/Inversion Heat Flux');
+        xlabel('Time / s');
+        ylabel('Heat flux / W/m^2');
+        ax = gca;
+        ax.YColor = [0.8500    0.3250    0.0980];
+        legend show
+    end % if Plot_Configuration(2,plotConfigColumn) == 1 
+
+    clear buffer_a buffer_b y1Max
+    if Plot_Configuration(3,plotConfigColumn) == 1  % <-> Msrmnt HF
+        locator = locator + 1;
+        subplot(y_Size,x_Size,locator)
+        all_marks={'o','+','*','.','x','s','d','^','v','>','<','p','h'};
+        for i = 1:length(Msrmnt_Heat_Flux(:,1))
+            hold on;
+            buffer_a(1,:) = Msrmnt_Temperature(i,:);
+            buffer_b(1,:) = Msrmnt_Heat_Flux(i,:);
+            if length(Msrmnt_Heat_Flux(:,1))==1
+                [ax,~,~]=plotyy(Time(1:length(buffer_b)),buffer_b,Time(1:length(buffer_a)),buffer_a);
+            else %NISI 3D
+
+                yyaxis left
+                h{i}=plot(Time(1:length(buffer_b)),buffer_b,'DisplayName',sprintf('HF_{A%d}',i),'LineStyle','-','Marker',all_marks{mod(i,13)},'MarkerIndices',1:int32(length(Msrmnt_Temperature)/10):length(Msrmnt_Temperature));
+                yyaxis right
+                k{i}=plot(Time(1:length(buffer_a)),buffer_a,'DisplayName',sprintf('T_S%d',i),'LineStyle','-','Marker',all_marks{mod(i,13)},'MarkerIndices',1:int32(length(Msrmnt_Temperature)/10):length(Msrmnt_Temperature));
+              
+            end
+        end
+        title('Measurement Heat Flux');
+        if length(Msrmnt_Heat_Flux(:,1))==1
+            legend('Measurment Heat Flux',['Measurment ' physicalQuantity]);
+        else %NISI 3D
+            legend show
+        end
+        xlabel('Time / s');
+        
+        if length(Msrmnt_Heat_Flux(:,1))==1 %1D
+        set(get(ax(1),'Ylabel'),'String','Heat flux / W/m^2');
+        set(get(ax(2),'Ylabel'),'String',yLabelTorP);
+
+        y2Max = max(Msrmnt_Temperature(:));
+        if y2Max > 50
+            y2Max = ceil(y2Max/100)*100;  
+            set(ax(2),'Ytick', 0:y2Max/10:y2Max)
+        elseif y2Max > 10
+            y2Max = ceil(y2Max/10)*10;
+            set(ax(2),'Ytick', 0:5:y2Max)
+        elseif y2Max < 1
+            y2Max = (ceil(y2Max*10)+1)/10;
+            set(ax(2),'Ytick', 0:y2Max/10:y2Max)
+            ytickformat('%,.1f')
+        else
+            y2Max = ceil(y2Max);
+            set(ax(2),'Ytick', 0:y2Max/10:y2Max)
+            ytickformat('%,.1f')
+        end
+        set(ax(2),'YLim',[0,y2Max])
+        else %3D
+            yyaxis right
+            ylabel('Temperature,K')
+            ylim([0,1.2*max(max(Msrmnt_Temperature))])
+            yyaxis left            
+            ylabel('Heat Flux, W/m^2')
+            ylim([0,1.2*max(max(Msrmnt_Heat_Flux))])
+        end
+        
+        % Plot Input Heat Flux if available (e.g. for NISI Laser Experiments)
+        time_buffer = Time;
+        load pfade.mat
+        nameNISIM = [pathDataFolder, nameDataset '\' nameMeasFolder '\' ...
+            nameDataset '_' nameMeasFolder '_M_NISI.mat'];
+        load(nameNISIM);
+        if exist('Input_Heat_Flux','var')
+            if length(Msrmnt_Heat_Flux(:,1))==1 %1D
+                plot(Time,Input_Heat_Flux,'k')
+                legend('Reconstructed Heat Flux','Input Heat Flux',['Measurment ' physicalQuantity]);
+                axis 'auto y'
+            else %3D
+                for i=1:length(Msrmnt_Heat_Flux(:,1))
+                    plot(Time,squeeze(Input_Heat_Flux(i,:)),'Color','k','DisplayName',sprintf('Input HF A%d',i),...
+                        'Marker',all_marks{mod(i,13)},'MarkerIndices',1:int32(length(Msrmnt_Temperature)/10):length(Msrmnt_Temperature))
+                end
+                legend show
+            end
+        end
+
+            clear pathDataFolder pathNISIfolder Time Input_Heat_Flux
+        Time = time_buffer;         
+        clear time_buffer
+    end % if Plot_Configuration(3,plotConfigColumn) == 1 
+end % if analyzeIR && CorM == 'C' 
+
+clear buffer_a buffer_b ITime 
+if Plot_Configuration(4,plotConfigColumn) == 1 % <-> IRs
+    
+    markerRecalcIR = 0;
+    if CorM == 'M' % Load IR from Calibration
+        load pfade.mat
+        filepathIRC =  [ pathDataFolder nameDataset '\' nameMeasFolder '\' ...
+                         nameDataset '_' nameCalFolder '_C_Impulse_Response.mat' ];
+        load(filepathIRC)
+        Delta_t_IR = t_H(2) - t_H(1);
+        Delta_t    = Time(2) - Time(1);
+        t_ges_IR   = t_H(end);
+        t_ges      = Time(end);
+        if Delta_t == Delta_t_IR && t_ges == t_ges_IR
+            % Time vectors between Calibration and Measurement are equal --> Do nothing here
+        else
+            markerRecalcIR = 1;
+            cMapIR2 = spring(ii*jj*3);
+            clear ii jj
+            time_H_original = t_H(:,1);
+            
+            H_scaled = H*(Delta_t/Delta_t_IR); % A different time step length leads to a longer pulse
+                                               % for the calculation of the IR and therefore to a higher
+                                               % magnitude of the IR.
+                                               % The scaled IR should in magnitude equal the
+                                               % recalculated IR.
+        end
+    end
+    
+    locator = locator +1;
+    subplot(y_Size,x_Size,locator)
+    ITime(1:length(Impulse_Response(1,1,:))) = 0:Time(2):(length(Impulse_Response(1,1,:))-1)*Time(2);
+    for i = 1:length(Impulse_Response(:,1,1))
+    for j = 1:length(Impulse_Response(:,1,1))
+        if ~markerRecalcIR
+            set(gca, 'ColorOrder', colormap(cMapIR), 'NextPlot', 'replacechildren');
+            hold;
+            buffer_a(1,:) = Impulse_Response(i,j,:);
+            plot(ITime,buffer_a) 
+            hold;
+        else
+            
+            set(gca, 'ColorOrder', colormap(cMapIR2), 'NextPlot', 'replacechildren');
+            
+            buffer_a(1,:) = Impulse_Response(i,j,:); % Plot IR used for Inversion
+            buffer_b(1,:) = H(i,j,:); % Plot IR calculated in Calibration
+            buffer_c(1,:) = H_scaled(i,j,:); % Plot IR calculated in Calibration and Scaled to Timestep Length of Measurement
+
+            hold;
+            plot(ITime,buffer_a,'DisplayName','IR used for Inversion');
+            plot(time_H_original,buffer_b,'-.k','DisplayName','IR calculated in Calibration');
+            plot(time_H_original,buffer_c,':k','DisplayName','Scaled IR calculated in Calibration');
+            legend show
+            hold;
+        
+        end
+    end
+    end
+    title('Impulse Response');
+    xlabel('Time / s');
+    ylabel(yLabelTorP);
+    ax = gca;
+    ax.YColor = cMapIR(1,:);
+   
+    % Plot zoomed IR
+    if analyzeIR && CorM == 'C' 
+        locator = locator +1;
+        subplot(y_Size,x_Size,locator)
+        
+        for i = 1:length(Impulse_Response(:,1,1))
+        for j = 1:length(Impulse_Response(:,1,1))
+           hold;
+           set(gca, 'ColorOrder', colormap(cMapIR), 'NextPlot', 'replacechildren');
+           buffer_a(1,:) = Impulse_Response(i,j,:);
+           plot(ITime,buffer_a) 
+           hold;
+           buffer_IRz(:,1) = Impulse_Response(i,j,:);
+           IRmax(i,j,1) = find(buffer_IRz==max(buffer_IRz));
+        end
+        end
+        title('Impulse Response - zoomed in');
+        xlabel('Time / s');
+        ylabel(yLabelTorP);
+        ax = gca;
+        ax.YColor = cMapIR(1,:);
+        if 5*(max(max(IRmax)))<length(ITime(1,:))
+            ax.XLim = [0 ITime(5*(max(max(IRmax))))];
+        end
+%         xlim(0:2*max(max(IRmax)));
+        
+        
+    end
+end
+end
+
+
+% Extend plot window size
+set(gcf,'units','normalized','outerposition',[0.01 0.04 0.96 0.95]); % [leftDist bottomDist horWidth vertWidth]
+
+% Save identification Plot
+load pfade.mat
+if CorM == 'C'
+    savefig([pathDataFolder nameDataset '/' nameCalFolder '/' namePlotWindow '.fig']);
+else %if CorM == 'M'
+    savefig([pathDataFolder nameDataset '/' nameMeasFolder '/' namePlotWindow '.fig']);
+end
+
+
+
+
+
+
+
+
+
+
+
+
+%% ------------------------------------------------------------------------
+% Positioning of the Frequency Analysis Plots
+%--------------------------------------------------------------------------
+positioning = 0;
+for i = 1:5
+   if Plot_Configuration(i+4,plotConfigColumn) == 1
+       positioning = positioning + 1; 
+   end
+end
+switch positioning
+    case {1,2}
+        x_Size = positioning;
+        y_Size = 1;  
+    case {3,4}
+        x_Size = 2;
+        y_Size = 2;
+    case 5
+        x_Size = 3;
+        y_Size = 2;   
+end
+%% ------------------------------------------------------------------------
+% Frequency Analysis Plots
+%--------------------------------------------------------------------------
+if Frequency_Analysis
+  if sum(Plot_Configuration(5:end,plotConfigColumn)) ~= 0 
+   try
+     close('Frequency Analysis');
+   end
+   figure('Name','Frequency Analysis','NumberTitle','off','units','normalized','outerposition',[0 0 1 1])  
+  end  
+  location = 0; 
+  
+  clear buffer_a buffer_b
+  if Plot_Configuration(5,plotConfigColumn) == 1 
+     location = location + 1; 
+     subplot(y_Size,x_Size,location)    
+     for i = 1:length(FFT_1_A(:,1,1))
+     for j = 1:length(FFT_1_A(:,1,1))
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+        buffer_a(1,:) = FFT_1_A(i,j,:);
+        buffer_b(1,:) = FFT_1_M(i,j,:); 
+        semilogy(buffer_a,buffer_b);
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+     end
+     end
+     title(['FFT - Calibration ' physicalQuantity]);
+     xlabel('Frequency');
+  end
+
+  clear buffer_a buffer_b  
+  if Plot_Configuration(6,plotConfigColumn) == 1 
+      location = location + 1;
+      subplot(y_Size,x_Size,location)      
+      for i = 1:length(FFT_4_A(:,1,1))
+      for j = 1:length(FFT_4_A(:,1,1))
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+        buffer_a(1,:) = FFT_4_A(i,j,:);
+        buffer_b(1,:) = FFT_4_M(i,j,:);      
+        semilogy(buffer_a,buffer_b)
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+      end
+      end
+      title('FFT - Calibration Heat Flux');
+      xlabel('Frequency');
+  end
+  
+  clear buffer_a buffer_b
+  if Plot_Configuration(7,plotConfigColumn) == 1 
+      location = location + 1;
+      subplot(y_Size,x_Size,location)    
+      for i = 1:length(FFT_2_A(:,1))
+       if i == 1 
+       else
+          hold;
+       end
+        buffer_a(1,:) = FFT_2_A(i,:);
+        buffer_b(1,:) = FFT_2_M(i,:); 
+        figure(2)
+        semilogy(buffer_a,buffer_b) 
+       if i == 1 
+       else
+          hold;
+       end
+      end
+      title(['FFT - Measurement ' physicalQuantity]);
+      xlabel('Frequency');
+  end
+  
+  clear buffer_a buffer_b
+  if Plot_Configuration(8,plotConfigColumn) == 1 
+     location = location + 1; 
+     subplot(y_Size,x_Size,location)   
+     for i = 1:length(FFT_3_A(:,1))
+       if i == 1 
+       else
+          hold;
+       end
+        buffer_a(1,:) = FFT_3_A(i,:);
+        buffer_b(1,:) = FFT_3_M(i,:);
+        semilogy(buffer_a,buffer_b) 
+       if i == 1 
+       else
+          hold;
+       end
+     end
+     title('FFT - Inverse Heat Flux');
+     xlabel('Frequency');
+  end
+  
+  clear buffer_a buffer_b
+  if Plot_Configuration(9,plotConfigColumn) == 1 
+     location = location + 1; 
+     subplot(y_Size,x_Size,location)   
+     for i = 1:length(FFT_5_A(:,1,1))
+     for j = 1:length(FFT_5_A(:,1,1))
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+        buffer_a(1,:) = FFT_5_A(i,j,:);
+        buffer_b(1,:) = FFT_5_M(i,j,:);     
+        semilogy(buffer_a,buffer_b)    
+       if i == 1 && j == 1
+       else
+          hold;
+       end
+     end
+     end
+     title('FFT - Impulse Response');
+     xlabel('Frequency');
+  end
+end % if Frequency_Analysis
+
+
+    fprintf('Plots done \n \n')
+else
+    fprintf('plot_module was disabled \n \n')   
+end % if sum(Plot_Configuration)>0
+
+end
+
+

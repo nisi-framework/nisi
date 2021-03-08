@@ -1,0 +1,9 @@
+diff a/Code/Subroutines/E_check.m b/Code/Subroutines/E_check.m	(rejected hunks)
+@@ -1,5 +1,7 @@
+ function[Time, Calibration_Heat_Flux, Calibration_Temperature] = E_check(file)
+ 
++load('pfade.mat');
++
+ fname = [pathDataFolder,file,'\NISI_',file,'.mat'];
+ 
+ fname = [pathDataFolder,file,'\NISI_',file,'.mat'];
