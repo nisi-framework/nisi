@@ -60,6 +60,10 @@ function NISI(nameDataset,CorM,varargin)
 %                           pathDataFolder\nameDataset\nameMeasFolder
 
 %---------------------------------------------------------------------------------------
+fprintf('NISI Copyright (C) 2021, [Stefan Loehle, Ulf Fuchs, Fabian Hufgard, Christian Duernhofer] \n')
+fprintf('This program comes with ABSOLUTELY NO WARRANTY; for details open LICENSE.md. \n This is free software, and you are welcome to redistribute it \n under certain conditions; check LICENSE.md for details.') 
+
+
 fprintf('\n \n \n \n')
 fprintf('Program started \n')
 fprintf('--------------------------------------------------------\n')
