@@ -99,15 +99,22 @@ while i < nargin
            Timestep_Reduction_M = varargin{(i+1)};
        case {'tzM', 'TZM','Temperature_Zero_M'}     % same as above
            Temperature_Zero_M = varargin{(i+1)};
+       case {'FluxTerms','fluxterms'}               % change Flux terms to specified array
+           Manual_n_o= varargin{(i+1)};
+       case {'TempTerms','tempterms'}               % change Temperature terms to specified array
+           Manual_d_o= varargin{(i+1)};
        case {'noPlot', 'Plotoff', 'no_plot'}        % option to disable plot_module at the end of the code
            % No action required, but counter needs to be reduced by 1:
            i = i-1;         % <- this is required, because noPlot is not a input pair, so i should only be increased by 1 overall
-       case {'noClear', 'noWSClear', 'no_clear'}        % option to disable the clearance of the base workspace at the start of the NISI code
+       case 'noClear'        % option to disable the clearance of the base workspace at the start of the NISI code
            % No action required, but counter needs to be reduced by 1:
            i = i-1;         % <- this is required, because noClear is not a input pair, so i should only be increased by 1 overall
        case {'noWB', 'noWaitBar', 'noWaitbar'}        % option to disable closing the multiWaitbar at the start of the NISI code
            % No action required, but counter needs to be reduced by 1:
            i = i-1;         % <- this is required, because noClear is not a input pair, so i should only be increased by 1 overall
+       case {'noExport'}    % option to disable the result export to the workspace
+           % No action required, but counter needs to be reduced by 1:
+           i = i-1;
        otherwise
            error('foo:bar',['Invalid overwrite input parameter: ''' varargin{i} '''\n\n'...
                     'Valid overwrite parameters are:\n'...
@@ -120,7 +127,8 @@ while i < nargin
                     'Timestep_Reduction_M:          ''tsrM''\n' ...
                     'Temperature_Zero_M:            ''tzM''\n' ...
                     'Disable plot_module:           ''noPlot''\n' ...
-                    'Disable workspace clearance:   ''noClear''\n'])
+                    'Disable workspace clearance:   ''noClear''\n'...
+                    'Disable data export:           ''noExport''\n'])
    end
    i = i+2;
 end % while i < nargin

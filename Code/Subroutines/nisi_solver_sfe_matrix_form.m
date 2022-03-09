@@ -1,5 +1,5 @@
 function [Msrmnt_Heat_Flux] = nisi_solver_sfe_matrix_form(Msrmnt_Temperature,Impulse_Response,...
-    Delta_t,Future_Time_Window)
+    Delta_t,Penetration_Time,Future_Time_Window)
 %% Solver using sequential function estimation in matrix form for multiple heat flux/sensor pairs(Beck's)  ,
 % S.269-272 Inverse Heat Conduction / Ill-posed Problems
 % für konstantes q_m für alle future_time_steps
@@ -16,16 +16,18 @@ function [Msrmnt_Heat_Flux] = nisi_solver_sfe_matrix_form(Msrmnt_Temperature,Imp
 % Output:      Msrmnt_Heat_Flux     - Heat flux vector
 
 %%Initalize vectors
+t_penetration                   = double(int32(Penetration_Time/Delta_t));
 r                               = double(int32(Future_Time_Window/Delta_t));   %Future_time_steps
 J                               = size(Msrmnt_Temperature,1);          %Sensors
 p                               = size(Msrmnt_Temperature,1);      %Areas
 Data_Points                     = length(Msrmnt_Temperature);
 
-IR_plotflag=0;              %Plot for analysis reasons
+IR_plotflag=1;              %Plot for analysis reasons
 HF_plotflag=0;              %Plot for analysis reasons
+Temp_plotFlag=0;
 kk=0;
 Msrmnt_Heat_Flux=zeros(J,Data_Points);
-
+Time=linspace(0,length(Msrmnt_Heat_Flux)*Delta_t,length(Msrmnt_Heat_Flux));
 %% Identify Penetrationtime and set it to zero
 if IR_plotflag
 f1=figure;hold on
@@ -34,17 +36,20 @@ end
 
 for Sensor=1:p
     for Surface=1:J
-        A=find(Impulse_Response(Surface,Sensor,:)<0);
-        if ~isempty(A)
-            Impulse_Response(Surface,Sensor,1:A(end))=0;
+        sign_array=sign(Impulse_Response(Surface,Sensor,:));
+        penetration=find(diff(sign_array)==2);          %find sign switch from -1 to 1
+        if ~isempty(penetration)
+            Impulse_Response(Surface,Sensor,1:penetration(1))=0;
         end
         if IR_plotflag
-            plot(squeeze(Impulse_Response(Surface,Sensor,:)))
+            plot(Time,squeeze(Impulse_Response(Surface,Sensor,:)))
         end
     end
 end
 
-
+Impulse_Response(:,:,1:t_penetration)=0;
+Impulse_Response(isnan(Impulse_Response))=0;
+Impulse_Response(Impulse_Response<0)=0;
 %T_future=zeros(J*r,1);                  %(7.2.2a,b)
 %q_future=zeros(r*p,1);                  %(7.2.3a,b)
 %X=zeros(J*r,p*r);                       %(7.2.4)
@@ -78,10 +83,10 @@ locs=cellfun(@isempty, triangular_matrix);
 X=cell2mat(triangular_matrix);
 A=cell2mat(A_buffer);
 
-Z=X*A;          %(7.2.17)   
+Z=X*A;%(7.2.17)
 T_i=zeros(J,r);
 Y_i=zeros(J,r);
-
+Z_squared=(Z'*Z);
 %% Recursive sequential function estimation start
 for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - r
     %------------------------------------------------------------------------
@@ -97,9 +102,16 @@ for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - r
                 iB(1,:) = Impulse_Response(Surface,Sensor,:);
                 ConvBuff = conv(iB,iA);
                 Induced_Temperature = Induced_Temperature +ConvBuff(1:Data_Points);
+                if currentTimeStep == length(Msrmnt_Temperature(1,:))  - r
+                    Simulated_Temp(Sensor,:)=Induced_Temperature;
+                end
             end
             T_i(Sensor,i)= Induced_Temperature(currentTimeStep+i-1);
             Y_i(Sensor,i)= Msrmnt_Temperature(Sensor,currentTimeStep+i-1);
+            
+            if currentTimeStep == length(Msrmnt_Temperature(1,:))  - r
+                Induced_Memory(Sensor,:)=Induced_Temperature;
+            end
         end
     end
     
@@ -115,11 +127,11 @@ for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - r
     end
     
     
-    beta_estimator=(Z'*Z)\Z'*(Y_buffer-T_buffer);       %(7.2.19)
+    beta_estimator=Z_squared\(Z'*(Y_buffer-T_buffer));       %(7.2.19)
+ %   beta_estimator=max(beta_estimator,0);   % No negative heat flux allowd
     
     Msrmnt_Heat_Flux(:,currentTimeStep)=beta_estimator;
-    
-    
+
     progress = currentTimeStep / ...          % progress increases from 0 to 1
         (length(Msrmnt_Temperature(1,:))-r);
     if progress > kk
@@ -137,4 +149,15 @@ if HF_plotflag
             plot(Msrmnt_Heat_Flux(i,:))
         end
     end
+end
+if Temp_plotFlag
+    if currentTimeStep==length(Msrmnt_Temperature(1,:))  - r
+    figure;hold on
+    for i=1:size(Msrmnt_Temperature,1)
+        plot(Time,Msrmnt_Temperature(i,:),'o-','MarkerIndices',int32(1:length(Msrmnt_Temperature)*0.1:length(Msrmnt_Temperature)))
+        plot(Time,Induced_Memory(i,:))
+    end
+    legend show
+    end
+end
 end

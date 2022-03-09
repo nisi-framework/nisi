@@ -67,7 +67,7 @@ ii           = length(Impulse_Response(:,1,1));
 jj           = length(Impulse_Response(1,:,1));        
 cMapIR      = spring(ii*jj);           % spring is colormap: magenta to yellow
 cMapDeltaT  = autumn((ii*jj)+1);
-cMap3D      = hot(ii+4); 
+cMap3D      = lines(ii+4); 
 
 %% ------------------------------------------------------------------------
 % Size estimation of the main visualisation figures
@@ -117,14 +117,49 @@ if Plot_Configuration(1,plotConfigColumn) == 1  % <-> Calibration/Simulation Tem
             buffer_a(1,:) = Calibration_Temperature(i,j,:);
             buffer_b(1,:) = Simulated_Temperature_Vector(i,j,:);
             buffer_c(1,:) = Calibration_Heat_Flux(i,j,:);
+            
             if length(Calibration_Heat_Flux(:,1,1))==1 %1D
                 [ax,~,~] = plotyy(Time(1:length(buffer_a)),buffer_a,Time(1:length(buffer_c)),buffer_c);
                 hold(ax(1), 'on');
                 plot(Time(1:length(buffer_b)),buffer_b, '-g', 'Parent', ax(1))
                 hold(ax(1),'off');
+                
+                xlabel('Time / s');
+                set(get(ax(1),'Ylabel'),'String',yLabelTorP);
+                set(get(ax(2),'Ylabel'),'String','Heat flux / W/m^2');
+                
+                % Configure left Y-Axis
+                y1Min = min(min(Calibration_Temperature(:), min(Simulated_Temperature_Vector(:))));
+                y1Max = max(max(Calibration_Temperature(:), max(Simulated_Temperature_Vector(:))));
+                if y1Max > 50
+                    y1Max = ceil(y1Max/100)*100;
+                elseif y1Max > 10
+                    y1Max = ceil(y1Max/10)*10;
+                elseif y1Max < 1
+                    y1Max = (ceil(y1Max*10)+1)/10;
+                else
+                    y1Max = ceil(y1Max);
+                end
+                set(ax(1),'YLim',[y1Min,y1Max])
+                set(ax(1),'YTickMode','auto')
+                
+                % Configure right Y-Axis
+                y2Max = max(max(Calibration_Heat_Flux(:)));
+                OoMHF = floor(log10(y2Max));             % order of magnitude of heat flux
+                y2Max = ceil(y2Max/10^OoMHF)*10^OoMHF;  % round up to next order of magnitude
+                y2Min = min(min(Calibration_Heat_Flux(:)));
+                if y2Min < 0 && y2Min > -y2Max/10
+                    y2Min = -y2Max/10;
+                else
+                    y2Min = 0;
+                end
+                set(ax(2),'YLim',[y2Min,y2Max],'Ytick', 0:0.5*10^OoMHF:y2Max)
+                
+
             else %3D
 
                 subplot(2,4,locator3D)
+                figure_handle(1)=gcf;
                 if i==j
                   yyaxis left
                   p(1)=plot(Time(1:length(buffer_c)),buffer_c,'-k','Marker','o','MarkerIndices',1:int32(length(Calibration_Heat_Flux)/8):length(Calibration_Heat_Flux),...
@@ -139,7 +174,7 @@ if Plot_Configuration(1,plotConfigColumn) == 1  % <-> Calibration/Simulation Tem
                 h{i}=plot(Time(1:length(buffer_b)),buffer_b,'--','Marker','+','DisplayName',sprintf('T_{Sim, Sensor%d}',j),'MarkerIndices',1:int32(length(Calibration_Heat_Flux)/10):length(Calibration_Heat_Flux),'Color',cMap3D(j,:));
                 k{i}=plot(Time(1:length(buffer_a)),buffer_a,'-','DisplayName',sprintf('T_{Cal,Sensor%d}',j),'Color',cMap3D(j,:));
                 ax(i)=gca;
-                ylabel('Tempearture, K')
+                ylabel('Temperature, K')
                 lgd=legend('show');
                 lgd.NumColumns=2;
             end
@@ -232,10 +267,13 @@ if analyzeIR && CorM == 'C'
     end
     set(get(axerr(2),'Ylabel'),'String','Relative error');
     set(axerr(2),'YLim',[-30,30],'Ytick', -30:10:30)
+    set(axerr(1),'YLim',max(abs(axerr(1).YLim)).*[-1 1]); 
+    set(axerr(1),'YTickMode','auto')
     
 else % -> d.h. analyzeIR = 0 oder CorM == 'M'  
     
     if Plot_Configuration(2,plotConfigColumn) == 1 % <-> Calibration/Inversion HF
+        if size(Calibration_Heat_Flux,1)==1     % <-> NISI 1D
         locator = locator + 1;
         subplot(y_Size,x_Size,locator)
 
@@ -260,6 +298,24 @@ else % -> d.h. analyzeIR = 0 oder CorM == 'M'
         ax = gca;
         ax.YColor = [0.8500    0.3250    0.0980];
         legend show
+        else         % <-> NISI 3D
+        locator3D=0;
+        for Surface = 1:length(Msrmnt_Heat_Flux(:,1))
+            locator3D=locator3D+1;
+            for Sensor = 1:length(Calibration_Heat_Flux(:,1,1))
+            subplot(2,4,locator3D)
+            figure_handle(2)=gcf;
+            hold on                
+            if Sensor==1
+            plot(Time,squeeze(Calibration_Heat_Flux(Surface,Sensor,:)),'b','DisplayName','Calibration')
+            end
+            plot(Time,Msrmnt_Heat_Flux(Surface,:),'r','DisplayName','Inversion')
+            title(sprintf('Area %d',Surface))
+            end
+            legend('Calibration','Inversion')
+        end
+        
+        end
     end % if Plot_Configuration(2,plotConfigColumn) == 1 
 
     clear buffer_a buffer_b y1Max
@@ -287,6 +343,7 @@ else % -> d.h. analyzeIR = 0 oder CorM == 'M'
             legend('Measurment Heat Flux',['Measurment ' physicalQuantity]);
         else %NISI 3D
             legend show
+            MsrmntFig_handle(1)=gcf;
         end
         xlabel('Time / s');
         
@@ -314,10 +371,10 @@ else % -> d.h. analyzeIR = 0 oder CorM == 'M'
         else %3D
             yyaxis right
             ylabel('Temperature,K')
-            ylim([0,1.2*max(max(Msrmnt_Temperature))])
+            %ylim([0,1.2*max(max(Msrmnt_Temperature))])
             yyaxis left            
             ylabel('Heat Flux, W/m^2')
-            ylim([0,1.2*max(max(Msrmnt_Heat_Flux))])
+            %ylim([0,1.2*max(max(Msrmnt_Heat_Flux))])
         end
         
         % Plot Input Heat Flux if available (e.g. for NISI Laser Experiments)
@@ -328,7 +385,7 @@ else % -> d.h. analyzeIR = 0 oder CorM == 'M'
         load(nameNISIM);
         if exist('Input_Heat_Flux','var')
             if length(Msrmnt_Heat_Flux(:,1))==1 %1D
-                plot(Time,Input_Heat_Flux,'k')
+                plot(Time,squeeze(Input_Heat_Flux),'k')
                 legend('Reconstructed Heat Flux','Input Heat Flux',['Measurment ' physicalQuantity]);
                 axis 'auto y'
             else %3D
@@ -374,7 +431,7 @@ if Plot_Configuration(4,plotConfigColumn) == 1 % <-> IRs
                                                % recalculated IR.
         end
     end
-    
+    if size(Impulse_Response,1)==1
     locator = locator +1;
     subplot(y_Size,x_Size,locator)
     ITime(1:length(Impulse_Response(1,1,:))) = 0:Time(2):(length(Impulse_Response(1,1,:))-1)*Time(2);
@@ -409,7 +466,24 @@ if Plot_Configuration(4,plotConfigColumn) == 1 % <-> IRs
     ylabel(yLabelTorP);
     ax = gca;
     ax.YColor = cMapIR(1,:);
-   
+    else                        %<-> NISI 3D
+    figure
+    locator3D=0;
+        for Surface = 1:length(Msrmnt_Heat_Flux(:,1))
+            locator3D=locator3D+1;
+            for Sensor = 1:length(Msrmnt_Heat_Flux(:,1))
+            figure_handle(3)=gcf;
+            MsrmntFig_handle(2)=gcf;
+            subplot(2,4,locator3D) 
+            hold on 
+            IR_string=strcat('Sensor ',num2str(Sensor));
+            plot(Time,squeeze(Impulse_Response(Surface,Sensor,:)),'DisplayName',IR_string)
+            title(sprintf('Area %d',Surface))
+            end
+          legend show
+        end
+    
+    end
     % Plot zoomed IR
     if analyzeIR && CorM == 'C' 
         locator = locator +1;
@@ -448,9 +522,17 @@ set(gcf,'units','normalized','outerposition',[0.01 0.04 0.96 0.95]); % [leftDist
 % Save identification Plot
 load pfade.mat
 if CorM == 'C'
+    if length(Calibration_Temperature(:,1,1))==1
     savefig([pathDataFolder nameDataset '/' nameCalFolder '/' namePlotWindow '.fig']);
+    else
+    savefig(figure_handle,[pathDataFolder nameDataset '/' nameCalFolder '/' namePlotWindow '.fig']);   
+    end
 else %if CorM == 'M'
+    if length(Msrmnt_Heat_Flux(:,1))==1
     savefig([pathDataFolder nameDataset '/' nameMeasFolder '/' namePlotWindow '.fig']);
+    else
+    savefig(MsrmntFig_handle,[pathDataFolder nameDataset '/' nameMeasFolder '/' namePlotWindow '.fig']);
+    end
 end
 
 

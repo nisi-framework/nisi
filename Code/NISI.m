@@ -133,11 +133,16 @@ try
     ~,~,~,~,~,~,~    ] ... % <- Dummy parameter
     = configLoadHandle();
 
-catch
-    error(['Unable to call config file in expected path.\nFile name expected:\n%s\n' ...
+catch ME
+    switch ME.identifier
+        case 'MATLAB:unassignedOutputs'
+        rethrow(ME)
+        case 'MATLAB:UndefinedFunction'
+        error(['Unable to call config file in expected path.\nFile name expected:\n%s\n' ...
           'Folder path expected:\n%s\n\nCheck existance of called config file.\n' ...
           'Check folder paths in your pfade.mat file.'], ...
           [configNameBuffer '.m'], [pathNisiFolder 'Configuration\']);
+    end
 end
 
 %% Overwrite Config Parameters: Process potential input variables and in case overwrite config
@@ -162,15 +167,25 @@ while i < nargin-1
            Timestep_Reduction_M = varargin{(i+1)};
        case {'tzM', 'TZM','Temperature_Zero_M'}     % same as above
            Temperature_Zero_M = varargin{(i+1)};
+       case {'FluxTerms','fluxterms'}               % change Flux terms to specified array
+           Manual_n_o= varargin{(i+1)};
+       case {'TempTerms','tempterms'}               % change Temperature terms to specified array
+           Manual_d_o= varargin{(i+1)};
+       case {'ManualIR'}                            % use manually defined impulse response, can not be used with any other input
+           Manual_IR=1;
+           Manual_IR_file=varargin{(i+1)};    
        case {'noPlot', 'Plotoff', 'no_plot'}        % option to disable plot_module at the end of the code
            Plot_Configuration = Plot_Configuration*0;   % <- this will cause the plot_module to skip all plotting
            i = i-1;         % <- this is required, because noPlot is not a input pair, so i should only be increased by 1 overall
-       case {'noClear', 'noWSClear', 'no_clear'}        % option to disable clearing the base workspace at the start of the code
+       case 'noClear'        % option to disable clearing the base workspace at the start of the code
            % No action required, but counter needs to be reduced by 1:
            i = i-1;         % <- this is required, because noClear is not a input pair, so i should only be increased by 1 overall
        case {'noWB', 'noWaitBar', 'noWaitbar'}        % option to disable closing the multiWaitbar at the start of the code
            % No action required, but counter needs to be reduced by 1:
            i = i-1;         % <- this is required, because noClear is not a input pair, so i should only be increased by 1 overall
+       case {'noExport'}    % option to disable the result export to the workspace
+           % No action required, but counter needs to be reduced by 1:
+           i = i-1;
        otherwise
            error('foo:bar',['Invalid overwrite input parameter: ''' varargin{i} '''\n\n'...
                     'Valid overwrite parameters are:\n'...
@@ -182,14 +197,19 @@ while i < nargin-1
                     'Temperature_Zero_C:            ''tzC''\n' ...
                     'Timestep_Reduction_M:          ''tsrM''\n' ...
                     'Temperature_Zero_M:            ''tzM''\n' ...
+                    'Change flux terms:             ''FluxTerms''\n'...
+                    'Change tempearture terms:      ''TempTerms''\n'...
                     'Disable plot_module:           ''noPlot''\n' ...
-                    'Disable workspace clearance:   ''noClear''\n'])
+                    'Disable workspace clearance:   ''noClear''\n'...
+                    'Disable data export:           ''noExport''\n'])
    end
    i = i+2;
 end
 
 % Overwrite the Config file in the Config folder
+if ~exist('Manual_IR_file','var')
 overwriteConfig(nameDataset, varargin{:})
+end
 
 clear i
 end % if nargin > 2
@@ -273,6 +293,7 @@ switch CorM
         [~,Msrmnt_TempOrPress,Time,Delta_t,Impulse_Response,t_H,Temperature_Regime] ...
             = parser(pathDataFolder,nameDataset,nameCalFolder,...
                      nameMeasFolder,Pre_Calc_Measurement,'M');
+                 
 end 
 
 fprintf('Data loaded \n \n')
@@ -280,9 +301,11 @@ fprintf('Data loaded \n \n')
 
 % Set up waitbars
 %---------------------------------------------------------------------------------------
-if ~sum(strcmp('noWB',varargin))
+flagWB = 0;     % 
+if ~sum(strcmp('noWB',varargin))    % this is true if there is no 'noWB' command -> i.e. do plot waitbars
 multiWaitbarControl(0,CorM,Pre_Calc_Calibration,Pre_Calc_Measurement,...
                     Auto_Param_Finder,Filter_Config,analyzeIR,'');
+flagWB = 1;
 end
 
 
@@ -351,7 +374,8 @@ if CorM == 'C' && Pre_Calc_Calibration
    [Calib_TempOrPress,Time] = ...
     filter_control(Calib_TempOrPress,Delta_t,1,Sensor,Timestep_Reduction,Temperature_Zero,...
     Filter_Config,Cut_Off_Frequency,FIR_Config,FIR_Runs,'');
-    
+    Calib_TempOrPress(isnan(Calib_TempOrPress))=0;
+
    fprintf('->Filtering calibration heat flux \n')
    [Calibration_Heat_Flux,~]   = ...
    filter_control(Calibration_Heat_Flux,Delta_t,2,Sensor,Timestep_Reduction,Temperature_Zero,...
@@ -456,15 +480,30 @@ case 'C' % <- System Identification
         %-----------------------------------------------------------------------------------
         % Saving Parameter Data & Impulse Response to files 
         %-----------------------------------------------------------------------------------
+        if iscell(Numerator_Order_Vector)==0 %Saving NISI 3D combined parameter set
         pathParameter = [ pathDataFolder nameDataset '\' nameCalFolder '\' ...
                      nameDataset '_' nameCalFolder '_C_NISI_Parameter.mat' ];
         save(pathParameter,'Numerator_Order_Vector','Numerator_Parameter_Vector', ...
                       'Denominator_Order_Vector','Denominator_Parameter_Vector', ...
                       'Error_Numerator_Vector','Error_Denominator_Vector');
-                  
+        else
+        for i=1:length(Numerator_Order_Vector)
+            for j=1:length(Numerator_Order_Vector)
+        Manual_n_o_Set{i,j}=[Numerator_Order_Vector{i,j};Numerator_Parameter_Vector{i,j}];
+        Manual_d_o_Set{i,j}=[Denominator_Order_Vector{i,j};Denominator_Parameter_Vector{i,j}];
+            end
+        end
+        pathParameter = [ pathDataFolder nameDataset '\' nameCalFolder '\' ...
+                     nameDataset '_' nameCalFolder '_C_NISI_Parameter.mat' ];
+        save(pathParameter,'Numerator_Order_Vector','Numerator_Parameter_Vector', ...
+                      'Denominator_Order_Vector','Denominator_Parameter_Vector', ...
+                      'Error_Numerator_Vector','Error_Denominator_Vector',...
+                      'Manual_n_o_Set','Manual_d_o_Set');
+        end
         pathIRC =  [ pathDataFolder nameDataset '\' nameCalFolder '\' ...
                         nameDataset '_' nameCalFolder '_C_Impulse_Response.mat' ];   
         H        = Impulse_Response;
+        Impulse_Response(isnan(Impulse_Response))=0;
         t_H      = Time;
         Delta_t_H    = t_H(2) - t_H(1);
         H_1J = H/Delta_t_H;
@@ -506,8 +545,8 @@ case 'M'     % <- System Identification
     % Impulse Response for Measurement
     %-------------------------------------------------------------------------------
     
-    % Check time vectors of measurement data and Impulse Response    
-    if isequal(t_H,Time)            %| Time vectors of IR and measurement data set are equal
+    % Check time vectors of measurement data and Impulse Response
+    if isequal(round(t_H,10),round(Time,10))            %| Time vectors of IR and measurement data set are equal
                                     %| --> Use IR from Calibration
                                                     
         filepathIRM =  [ pathDataFolder nameDataset '\' nameMeasFolder '\' ...
@@ -519,7 +558,7 @@ case 'M'     % <- System Identification
         end
         
         copyfile(filepathIRC, filepathIRM, 'f');    % Create Msrmt IR from Cal IR by copying
-        open(filepathIRM)
+        open(filepathIRM);
          
         
         
@@ -536,12 +575,22 @@ case 'M'     % <- System Identification
         filepathParaM =  [ pathDataFolder nameDataset '\' nameMeasFolder '\' ...
                          nameDataset '_' nameCalFolder '_C_NISI_Parameter.mat' ];
         load(filepathParaM)
-        Numerator_Order = Numerator_Order_Vector{1,1};
-        Numerator_Parameter = Numerator_Parameter_Vector{1,1};        
-        Denominator_Order = Denominator_Order_Vector{1,1};
-        Denominator_Parameter = Denominator_Parameter_Vector{1,1};
-                                 
+        
+        for Surface=1:size(Msrmnt_TempOrPress,1)
+            for TC=1:size(Msrmnt_TempOrPress,1)
+        if length(Numerator_Order_Vector)>1 || iscell(Numerator_Order_Vector)
+        Numerator_Order = Numerator_Order_Vector{Surface,TC};
+        Numerator_Parameter = Numerator_Parameter_Vector{Surface,TC};        
+        Denominator_Order = Denominator_Order_Vector{Surface,TC};
+        Denominator_Parameter = Denominator_Parameter_Vector{Surface,TC};
+        else
+        Numerator_Order = Numerator_Order_Vector;
+        Numerator_Parameter = Numerator_Parameter_Vector;        
+        Denominator_Order = Denominator_Order_Vector;
+        Denominator_Parameter = Denominator_Parameter_Vector;
+        end
         % IR mit altem Zeitschritt (und in der Länge angepassten Zeitvektor) und alten Parametern ausgerechnet
+        
         Delta_t_H = t_H(2) - t_H(1);
         t_H_new = [0:Delta_t_H:Time(end)];
         Dirac_Impulse(1:length(t_H_new),1) = 0;         % Creating numerical 
@@ -553,14 +602,18 @@ case 'M'     % <- System Identification
         
         % Skalierung um Verhältnis der Zeitschrittlängen (was dem Verhältnis der Energien der
         % Dirac-Impulse entspricht)
+        Response2(isnan(Response2))=0;
         Ratio_t_exact = Delta_t/Delta_t_H;
         Response3 = Response2*Ratio_t_exact;
         
         % Zeitschrittanpassung von Response3 auf neue Zeitdiskretisierung
         Response4 = pchip(t_H_new,Response3,Time);
+
+        H(Surface,TC,:) = Response4(:,1);
+            end
+        end
         clear Impulse_Response t_H 
-        Impulse_Response(1,1,:) = Response4(:,1);
-        H = Impulse_Response;
+        Impulse_Response=H;
         t_H = Time;
         Delta_t_H    = t_H(2) - t_H(1);
         H_1J = H/Delta_t_H;                    % Impuls Response for 1 J/m^2 pulse (=H/Delta_t_H) <-> das entspricht eigentliche einer Impulsantwort wie sie definiert ist.
@@ -568,27 +621,39 @@ case 'M'     % <- System Identification
             %-----------------------------------------------------------------------------------
             % Filter application for the impulse response if specified in Filter_Config
             %-----------------------------------------------------------------------------------
-            switch Filter_Config(4) % case 0 --> nothing happens
-
-             case {1,2,3,4,5}       % cases 1 to 5 --> filter IR     
-
-               [Impulse_Response,~] = ...    %% Access to interpolation models for the IR <--??
-               filter_control(Impulse_Response,Delta_t_H,4,Sensor,Timestep_Reduction,Temperature_Zero,...
-               Filter_Config,Cut_Off_Frequency,FIR_Config,FIR_Runs,'');
-
-             case 6
-               Filter_Config(5)              = 0; 
-               [Impulse_Response] = ir_module(Impulse_Response,Time);
-             case 66
-%                Filter_Config(5)              = 0; 
-               [Impulse_Response] = ir_module_quad(Impulse_Response,Time); 
-            end % switch Filter_Config(4)
-        
+            for Surface=1:size(H,2)
+                for TC=1:size(H,2)
+                    switch Filter_Config(4) % case 0 --> nothing happens
+                        
+                        case {1,2,3,4,5}       % cases 1 to 5 --> filter IR
+                            
+                            [Impulse_Response,~] = ...    %% Access to interpolation models for the IR <--??
+                                filter_control(H(Surface,TC,:),Delta_t_H,4,Sensor,Timestep_Reduction,Temperature_Zero,...
+                                Filter_Config,Cut_Off_Frequency,FIR_Config,FIR_Runs,'');
+                            H(Surface,TC,:)=Impulse_Response;
+                        case 6
+                            Filter_Config(5)              = 0;
+                            [Impulse_Response] = ir_module(H(Surface,TC,:),Time);
+                            H(Surface,TC,:)=Impulse_Response;
+                        case 66
+                            %                Filter_Config(5)              = 0;
+                            [Impulse_Response] = ir_module_quad(H(Surface,TC,:),Time);
+                            H(Surface,TC,:)=Impulse_Response;
+                    end % switch Filter_Config(4)
+                end
+            end
     save(filepathIRM, 'H','t_H','Delta_t_H','H_1J')
     end
-
+        if length(Msrmnt_TempOrPress(:,1))>1 && exist('H','var')
+        Impulse_Response=H;
+        end
         clear Delta_t_H t_ges_H t_ges H t_h
      
+        if exist('Manual_IR','var')
+            load(Manual_IR_file,'t_H','H');
+            Delta_t=t_H(2)-t_H(1);
+            Impulse_Response=H;
+        end
      
 end % switch CorM <- System Identification
 
@@ -614,7 +679,7 @@ fprintf('Starting inversion process... \n')
     % die ersten n IR-Einträge auf 0 gesetzt (entsprechend der Penetration Steps). 
     
     Penetration_Steps = double(int32(Penetration_Time/Delta_t)); % Delta_t = Delta_t_H ?!? müsste!
-    Impulse_Response(1,1,2:Penetration_Steps+1) = 0;    % +1, weil Time(1) = 0 <-> der erste Penetration Step entspricht dem 2. Eintrag im Zeitvekotr
+    Impulse_Response(:,:,2:Penetration_Steps+1) = 0;    % +1, weil Time(1) = 0 <-> der erste Penetration Step entspricht dem 2. Eintrag im Zeitvekotr
     
     % Wenn IR-Filter 8 gewählt wurde, wird die IR nach der Penetration Time exponentiell gefittet. 
     % Dieser Filter ist noch ausführlicher zu testen
@@ -633,7 +698,7 @@ fprintf('Starting inversion process... \n')
 
         for i = 1:length(Calib_TempOrPress(:,1,1))
         for j = 1:length(Calib_TempOrPress(1,:,1)) 
-           Buffer(1,:) = Calib_TempOrPress(i,j,:); 
+           Buffer(1,:) = Calib_TempOrPress(j,i,:);
            Msrmnt_TempOrPress(i,:) = Msrmnt_TempOrPress(i,:) + Buffer;
         end
         end
@@ -643,28 +708,33 @@ fprintf('Starting inversion process... \n')
  switch Solver_Configuration
     case 0
     [Msrmnt_Heat_Flux]   = nisi_solver_pVC(Msrmnt_TempOrPress,Impulse_Response,Delta_t,...
-                                           Penetration_Time,Future_Time_Window);
+                                           Penetration_Time,Future_Time_Window,flagWB);
     case 1
     [Msrmnt_Heat_Flux]   = nisi_solver_sfe(Msrmnt_TempOrPress,Impulse_Response,Delta_t, ...
-                                           Penetration_Time,Future_Time_Window);
+                                           Penetration_Time,Future_Time_Window,flagWB);
     %case 2
     % [Msrmnt_Heat_Flux]   = nisi_solver_nl_sfe(Msrmnt_Temperature,Coefficient_Matrix,Delta_t,Penetration_Time,Future_Time_Window);
     case 3
     [Msrmnt_Heat_Flux]   = nisi_solver_sfe_CD(Msrmnt_TempOrPress,Impulse_Response,Delta_t, ...
-                                           Future_Time_Window);
+                                           Future_Time_Window,flagWB);
     case 4
     [Msrmnt_Heat_Flux]   = nisi_solver_sfe_linearHF(Msrmnt_TempOrPress,Impulse_Response,Delta_t, ...
-                                           Future_Time_Window);
+                                           Future_Time_Window,flagWB);
     case 5
     [Msrmnt_Heat_Flux]   = nisi_solver_sfe_matrix_form(Msrmnt_TempOrPress,Impulse_Response,Delta_t, ...
-                                           Future_Time_Window);         
+                                           Penetration_Time,Future_Time_Window);         
+    case 6
+    [Msrmnt_Heat_Flux]   = nisi_solver_ablator(Msrmnt_TempOrPress,Impulse_Response,Delta_t, ...
+                                           Future_Time_Window);  
+ 
  end
 
 % Postprocessing Inverted Heat Flux
-[Msrmnt_Heat_Flux,~] = filter_control(Msrmnt_Heat_Flux,Delta_t,5,Sensor,...
+for area=1:length(Msrmnt_Heat_Flux(:,1))
+[Msrmnt_Heat_Flux(area,:),~] = filter_control(Msrmnt_Heat_Flux(area,:),Delta_t,5,Sensor,...
                        Timestep_Reduction,Temperature_Zero,Filter_Config,...
                        Cut_Off_Frequency,FIR_Config,FIR_Runs,nPlat_SPE); 
-
+end
 fprintf('Inverse heat flux solved\n \n')
 end % analyzeIR && strcmp(CorM,'C')
                    
@@ -726,7 +796,7 @@ plot_module(Frequency_Analysis,Plot_Configuration,nameDataset,nameCalFolder,name
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Export Data to Workspace %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+if ~sum(strcmp('noExport',varargin)) 
 fprintf('Exporting data to workspace... \n')
     assignin('base','Impulse_Response', Impulse_Response); 
     assignin('base','Time', Time); 
@@ -747,7 +817,7 @@ switch CorM
         assignin('base','Msrmnt_Heat_Flux', Msrmnt_Heat_Flux); 
 end
 fprintf('Data export done \n \n')
-
+end
 if ~sum(strcmp('noWB',varargin))
 multiWaitbar('CLOSEALL');
 end
@@ -757,6 +827,6 @@ cpuDuration = cputime - Timer_Start;
 fprintf(['Program finished after %4.1f seconds (@' ...
          '%4.1f seconds CPU-Time)\n'], programDuration ,cpuDuration)
 fprintf('--------------------------------------------------------\n')
-
+fclose('all');
 
 end

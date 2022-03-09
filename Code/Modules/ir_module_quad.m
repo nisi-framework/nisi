@@ -61,6 +61,7 @@ for j = 1:CounterIR(2)
           h=1;
       end
    end
+   break
    end
    
    % Fit eines quadratischen Anfangsanstiegs

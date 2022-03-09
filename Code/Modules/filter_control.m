@@ -92,14 +92,15 @@ switch fcHandle
                  'Impulse Response is already as long as the Temperature and Heat Flux Vector.\n'...
                  'The reduction of the Impulse Response has therefore been turned off.'], '');
         if Sensor(1) ~= 0 && Sensor(2) ~= 0
-            filterInput(1,:) = Input_Vector(Sensor(1),Sensor(2),:); 
+            %filterInput(1,:) = Input_Vector(Sensor(1),Sensor(2),:); 
+            filterInput(1,:) = Input_Vector(1,1,:);     %Filtering one Impulse Response at a time
             
             [filterOutput,Time] = chooseFilter(...
                 filterInput,1,Filter_Config,FIR_Config,FIR_Runs,... % Timestep_Reduction set to 1, because IR is not to be reduced!
                 fcHandle,Delta_t,Cut_Off_Frequency,nPlat_SPE);
             
             filterOutput(1,1) = 0;
-            Output_Vector(Sensor(1),Sensor(2),:) = filterOutput(1,:); 
+            Output_Vector(1,1,:) = filterOutput(1,:); 
         else
             for i=1:length(Input_Vector(:,1,1))
             for j=1:length(Input_Vector(1,:,1))

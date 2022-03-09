@@ -1,5 +1,5 @@
 function [Msrmnt_Heat_Flux] = nisi_solver_sfe_linearHF(Msrmnt_Temperature,Impulse_Response,...
-Delta_t,Future_Time_Window)
+Delta_t,Future_Time_Window,flagWB)
 %% Solver using sequential function estimation (Beck's)
 % für konstantes q_m für alle future_time_steps
 Future_Time_Steps                         = double(int32(Future_Time_Window/Delta_t));
@@ -8,7 +8,11 @@ Msrmnt_Points                             = length(Msrmnt_Temperature(:,1));
 
 
 % StabCount = 0;
-kk=0;
+if flagWB
+kk = 0;
+else
+kk = 1;     % -> results in no plot of multiwaitbar
+end
 Msrmnt_Heat_Flux=zeros(Msrmnt_Points,Datapoints);
 Coeff_Mat=zeros(Msrmnt_Points,Msrmnt_Points);
 delta_Temperature=zeros(Msrmnt_Points,Future_Time_Steps);
@@ -89,7 +93,7 @@ for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - Future_Time_Steps
       (length(Msrmnt_Temperature(1,:))-Future_Time_Steps);
   if progress > kk
   multiWaitbar('Inverting System',progress);
-  kk=kk+0.001;                                % with kk the output rate is reduced to every 0.1%
+  kk=kk+0.01;                                % with kk the output rate is reduced to every 0.1%
   end
 end  % for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - Future_Time_Steps
 
@@ -109,6 +113,7 @@ end  % for currentTimeStep = 1:length(Msrmnt_Temperature(1,:))  - Future_Time_St
 % end
 % hold off
 
-
+if flagWB
 multiWaitbar('Inverting System',1);
+end
 end
